@@ -1,0 +1,130 @@
+name: CI-Integrate
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  _PROJECT: ${{ github.event.repository.name }}
+  _USER: ${{ github.actor }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup SSH Keys and known_hosts
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${{ secrets.SSH_PRIVATE_KEY_TO_REPO }}"
+#      - name: Install prerequisites
+##        run: sudo make install-allure #no dollar sign
+#        run: make brew-allure
+
+      - name: Install dependencies
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+          EXTRAS: test
+        run: make install
+
+      - name: Run check
+        run: make test
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup SSH Keys and known_hosts
+      env:
+        SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+      run: |
+        ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+        ssh-add - <<< "${{ secrets.SSH_PRIVATE_KEY_TO_REPO }}"
+
+    - name: Install dependencies
+      env:
+        SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        EXTRAS: lint
+      run: make install
+
+    - name: Run check
+      run: make lint
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup SSH Keys and known_hosts
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${{ secrets.SSH_PRIVATE_KEY_TO_REPO }}"
+
+      - name: Install dependencies
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+          EXTRAS: format
+        run: make install
+
+      - name: Run check
+        run: make format
+
+  compose:
+    name: Docker-Compose
+    runs-on: ubuntu-latest
+    needs: [test, lint, format]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup SSH Keys and known_hosts
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${{ secrets.SSH_PRIVATE_KEY_TO_REPO }}"
+
+      - name: docker-compose build
+        env:
+          DOCKER_BUILDKIT: 1
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY_TO_REPO }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY_TO_REPO }}
+        run: docker-compose build
+# TODO:   make build # make źle parsuje ssh key i nie da się go podstawić do komendy docker-compose mimo że jest w envie i nie trzeba go przekazywać do make
+
+      - name: docker-compose up
+        env:
+          ALLOWED_HOSTS: ${{ secrets.TESTING_HOST_IP }}
+          SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+        run: docker-compose up -d
+  docker:
+    name: Docker
+    runs-on: ubuntu-latest
+    needs: [test, lint, format]
+    steps:
+      - uses: actions/checkout@v2
+      - name: docker build
+        env:
+          ssh_prv_key: ${{ secrets.SSH_PRIVATE_KEY_TO_REPO }}
+          ssh_pub_key: ${{ secrets.SSH_PUBLIC_KEY_TO_REPO }}
+        run: docker build -t example --build-arg ssh_prv_key="${{ secrets.SSH_PRIVATE_KEY_TO_REPO }}" --build-arg ssh_pub_key="${{ secrets.SSH_PUBLIC_KEY_TO_REPO }}" .
+
+      - name: docker run
+        env:
+          ALLOWED_HOSTS: ${{ secrets.TESTING_HOST_IP }}
+          SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+        run: docker run -d -p 8020:8020 example:latest
+#        -e DJANGO_SUPERUSER_USERNAME=admin \
+#         -e DJANGO_SUPERUSER_PASSWORD=test \
+#         -e DJANGO_SUPERUSER_EMAIL=admin@example.com example:latest

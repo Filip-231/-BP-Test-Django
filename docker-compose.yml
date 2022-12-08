@@ -1,0 +1,23 @@
+version: '3.7'
+
+services:
+  django_api:
+    build:
+      context: .
+      args:
+        ssh_prv_key: $SSH_PRIVATE_KEY
+        ssh_pub_key: $SSH_PUBLIC_KEY
+    ports:
+      - "8020:8020"
+    volumes:
+      - ./app:/app
+    environment:
+      - DEBUG=1
+      - ALLOWED_HOSTS=$ALLOWED_HOSTS
+      - SECRET_KEY=$SECRET_KEY
+      - DOCKER_BUILDKIT=1
+      - DJANGO_SUPERUSER_USERNAME=admin
+      - DJANGO_SUPERUSER_PASSWORD=$DJANGO_SUPERUSER_PASSWORD
+      - DJANGO_SUPERUSER_EMAIL=admin@example.pl
+  #    env_file:
+  #      - .env

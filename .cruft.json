@@ -1,0 +1,21 @@
+{
+  "template": "git@github.com:Filip-231/Boilerplate.git",
+  "commit": "4ba2d35193e43ca01545cf7cc537c144d51e8a7f",
+  "checkout": "master",
+  "context": {
+    "cookiecutter": {
+      "_copy_without_render": [
+        "docs/source/templates",
+        ".github/workflows"
+      ],
+      "project_name": "BP-Test-Django",
+      "repo_name": "BP-Test-Django",
+      "api_name": "django_api",
+      "author_name": "Your Name",
+      "email": "Your Email",
+      "description": "A short description of the project",
+      "_template": "git@github.com:Filip-231/Boilerplate.git"
+    }
+  },
+  "directory": "templates/django"
+}

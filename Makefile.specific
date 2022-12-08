@@ -1,0 +1,123 @@
+SHELL := /bin/bash
+LANGUAGE ?= python
+
+
+ .PHONY: build
+build:  ## build docker-compose image
+	sudo SSH_PRIVATE_KEY='$(SSH_PRIVATE_KEY)' SSH_PUBLIC_KEY='$(SSH_PUBLIC_KEY)' docker-compose build
+
+
+ .PHONY: up
+up: ## (ALLOWED_HOSTS= SECRET_KEY= ) up the compose
+	sudo ALLOWED_HOSTS='$(ALLOWED_HOSTS)' SECRET_KEY='$(SECRET_KEY)' \
+	SSH_PRIVATE_KEY='$(SSH_PRIVATE_KEY)' SSH_PUBLIC_KEY='$(SSH_PUBLIC_KEY)' \
+	docker-compose up -d
+
+
+ .PHONY: down
+down: ## down the compose
+	docker-compose down
+
+
+.PHONY: docker-build-dev
+docker-build-dev: ## build docker image locally
+	docker build -t "$(SERVICE_NAME)" --build-arg ssh_prv_key="$(cat ~/.ssh/id_rsa)" --build-arg ssh_pub_key="$(cat ~/.ssh/id_rsa.pub)" .
+#: TODO make that works
+
+
+.PHONY: docker-run-dev
+docker-run-dev: ## run docker image including .env file
+	docker rm "$(SERVICE_NAME)" && docker run --name "$(SERVICE_NAME)" -it -p 8020:8020 \
+     --env-file ./.env \
+     "$(SERVICE_NAME):latest"
+# -e DJANGO_SUPERUSER_USERNAME=test
+#: TODO above assume that there were container with that name before
+
+
+.PHONY: docker-exec
+docker-exec: ## exec in a docker container
+	docker exec -it "$(SERVICE_NAME)" sh
+
+
+.PHONY: docker-run-package
+docker-run-package: ## (VERSION= ) runs package downloaded from GH package registry
+	@echo ghcr.io/$(_USER)/$(_PROJECT):`(cat VERSION)`
+	docker run -it -p 8020:8020 \
+     --env-file ./.env \
+     $(if $(VERSION), "$(GH_PACKAGE)$(VERSION)", "$(GH_PACKAGE)latest" )
+
+
+.PHONY: test
+test:: venv ## (ALLURE=True BROWSE=True) run tests
+	echo "Executing pytest"
+	@. "$(_VENV_ACTIVATE)" && python -m pytest -p no:allure_pytest_bdd  --cov --cov-report=term-missing \
+			--cov-report=xml:public/coverage.xml \
+			$(if $(ALLURE),--alluredir=public/allure-results,-p no:allure_pytest) \
+			$(if $(CODECOV_TOKEN),--codecov --codecov-token="$(CODECOV_TOKEN)",-p no:codecov) \
+			$(if $(DEBUG),--pdb )tests/ $(if $(ALLURE),&& \
+				allure generate --clean --report-dir public/allure-report public/allure-results)
+	$(if $(ALLURE), \
+		$(if $(BROWSE), \
+		echo "Opening Allure report" && \
+			allure open public/allure-report \
+		) \
+	)
+
+
+.PHONY: format
+format:: venv ## format code
+	. "$(_VENV_ACTIVATE)" && \
+		isort . && black .
+
+
+.PHONY: lint
+lint:: venv ## run static code checkers
+	. "$(_VENV_ACTIVATE)" && \
+		prospector
+
+
+.PHONY: docs
+docs:: venv ## render documentation
+	. "$(_VENV_ACTIVATE)" && \
+		sphinx-build -a -b html -E docs/source public
+
+
+.PHONY: clean
+clean:: ## clean up temp and trash files
+	find . -type f -name "*.py[cdo]" -delete
+	find . -type d -name "__pycache__" -delete
+	rm -rf .coverage .mypy_cache .pytest_cache *.egg-info build dist public
+	sudo docker-compose down --remove-orphans
+	yes | sudo docker system prune --volumes
+
+
+.PHONY: install
+install:: pre-install ## install all requirements
+	echo "Installing requirements."; \
+		if [ -z "$(EXTRAS)" ]; then \
+			echo "Installing requirements.txt" ;\
+			. "$(_VENV_ACTIVATE)" && pip install -r requirements.txt ;\
+		else \
+		echo "Installing requirements, extra requirements & setup.py in editable mode..."; \
+		. "$(_VENV_ACTIVATE)" && \
+			pip-sync$$EXTRA_INDEXES $(shell IFS="," read -a array -r <<< $(EXTRAS) && \
+				for extra in $${array[@]}; do \
+					echo -n " extras/$${extra}-requirements.txt"; \
+				done) && \
+				pip install --editable=.; \
+		fi
+
+
+.PHONY: freeze
+freeze: venv ## (UPGRADE= ) generate requirements from setup.cfg
+	. "$(_VENV_ACTIVATE)" &&  \
+		pip-compile $(if $(UPGRADE),--upgrade )setup.cfg; \
+				for extra in $(shell $(PYTHON) -c \
+					'import configparser; \
+					config = configparser.ConfigParser(); \
+					_ = config.read("setup.cfg"); \
+					print(" ".join(config["options.extras_require"]))'); \
+				do \
+					pip-compile$$EXTRA_INDEXES --no-emit-index-url --quiet --extra="$${extra}" \
+						--output-file="extras/$${extra}-requirements.txt" $(if $(UPGRADE),--upgrade )setup.cfg; \
+				done

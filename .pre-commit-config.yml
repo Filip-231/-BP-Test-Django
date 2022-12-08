@@ -1,0 +1,56 @@
+default_stages:
+- commit
+repos:
+- repo: local
+  hooks:
+  - id: make-format
+    name: Run code formatting checks
+    entry: make format CHECK=true
+    language: system
+    types: [python]
+    pass_filenames: false
+  - id: make-freeze
+    name: Check missing requirements
+    entry: make freeze
+    language: system
+    always_run: false
+    files: ^setup.cfg$
+    pass_filenames: false
+  - id: make-lint
+    name: Run code styling checks
+    entry: make lint
+    language: system
+    types: [python]
+    pass_filenames: false
+  - id: make-test
+    name: Run unit tests
+    entry: make test
+    language: system
+    types: [python]
+    pass_filenames: false
+  - id: make-docs
+    name: Check docs build
+    entry: make docs
+    language: system
+    files: ^docs/.*$
+    pass_filenames: false
+  - id: make-check-commit
+    name: Check commit message
+    stages: [commit-msg]
+    entry: make check-commit
+    language: system
+    require_serial: true
+    always_run: true
+    pass_filenames: false
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.0.1
+  hooks:
+  - id: check-json
+  - id: check-yaml
+    exclude: ^\.gitlab-ci\.yml$
+  - id: end-of-file-fixer
+  - id: mixed-line-ending
+    args: ['--fix', 'lf']
+  - id: no-commit-to-branch
+    args: ['--branch', '', '--pattern', '^(?!(?:master$|untracked(?:-[-\w]+)?$|[A-Z]{2,}-\d+(?:-\w+)?)$).*$']
+  - id: trailing-whitespace
